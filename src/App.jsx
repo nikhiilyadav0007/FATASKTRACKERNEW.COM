@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const STORAGE_KEY = "projectpulse_v3";
+const STORAGE_KEY = "projectpulse_v4";
 const defaultData = {
   members: [
     { id:"m0", name:"Admin User", initials:"AU", color:"#F04D5A", role:"admin",  email:"admin@demo.com",  password:"admin123"  },
@@ -14,12 +14,12 @@ const defaultData = {
     { id:"p2", name:"Mobile App v2", color:"#22C97A", description:"PWA upgrade with offline support",   createdAt:Date.now()-864e5*2, memberIds:["m0","m1","m3","m4"] },
   ],
   tasks: [
-    { id:"t1", projectId:"p1", title:"Design logo variations",    assigneeId:"m1", status:"done",        priority:"high",   due:"2026-06-01", createdAt:Date.now()-864e5*4, asanaLink:"", remarks:"Completed 3 variants", attachments:[], comments:[] },
-    { id:"t2", projectId:"p1", title:"Color palette finalization", assigneeId:"m2", status:"in_progress", priority:"high",   due:"2026-06-05", createdAt:Date.now()-864e5*3, asanaLink:"", remarks:"", attachments:[], comments:[{id:"c1",authorId:"m2",text:"Shortlisted to 2 options, checking with client",createdAt:Date.now()-36e5}] },
-    { id:"t3", projectId:"p1", title:"Typography guidelines",      assigneeId:"m3", status:"todo",        priority:"medium", due:"2026-06-08", createdAt:Date.now()-864e5*2, asanaLink:"", remarks:"", attachments:[], comments:[] },
-    { id:"t4", projectId:"p2", title:"Service worker setup",       assigneeId:"m1", status:"in_progress", priority:"high",   due:"2026-06-04", createdAt:Date.now()-864e5,   asanaLink:"https://app.asana.com/0/123/456", remarks:"Refer Asana for full spec", attachments:[], comments:[] },
-    { id:"t5", projectId:"p2", title:"Offline data sync logic",    assigneeId:"m4", status:"todo",        priority:"medium", due:"2026-06-10", createdAt:Date.now(),          asanaLink:"", remarks:"", attachments:[], comments:[] },
-    { id:"t6", projectId:"p2", title:"Push notification flow",     assigneeId:"m2", status:"blocked",     priority:"low",    due:"2026-06-12", createdAt:Date.now(),          asanaLink:"", remarks:"Blocked pending Firebase keys", attachments:[], comments:[] },
+    { id:"t1", projectId:"p1", title:"Design logo variations",    assigneeId:"m1", status:"done",        priority:"high",   due:"2026-06-01", createdAt:Date.now()-864e5*4, asanaLink:"", remarks:"Completed 3 variants", attachments:[], comments:[], followers:[] },
+    { id:"t2", projectId:"p1", title:"Color palette finalization", assigneeId:"m2", status:"in_progress", priority:"high",   due:"2026-06-15", createdAt:Date.now()-864e5*3, asanaLink:"", remarks:"", attachments:[], comments:[{id:"c1",authorId:"m2",text:"Shortlisted to 2 options, checking with client",createdAt:Date.now()-36e5}], followers:["m0","m1"] },
+    { id:"t3", projectId:"p1", title:"Typography guidelines",      assigneeId:"m3", status:"todo",        priority:"medium", due:"2026-06-20", createdAt:Date.now()-864e5*2, asanaLink:"", remarks:"", attachments:[], comments:[], followers:[] },
+    { id:"t4", projectId:"p2", title:"Service worker setup",       assigneeId:"m1", status:"in_progress", priority:"high",   due:"2026-06-18", createdAt:Date.now()-864e5,   asanaLink:"https://app.asana.com/0/123/456", remarks:"Refer Asana for full spec", attachments:[], comments:[], followers:["m0"] },
+    { id:"t5", projectId:"p2", title:"Offline data sync logic",    assigneeId:"m4", status:"todo",        priority:"medium", due:"2026-06-25", createdAt:Date.now(),          asanaLink:"", remarks:"", attachments:[], comments:[], followers:[] },
+    { id:"t6", projectId:"p2", title:"Push notification flow",     assigneeId:"m2", status:"blocked",     priority:"low",    due:"2026-06-28", createdAt:Date.now(),          asanaLink:"", remarks:"Blocked pending Firebase keys", attachments:[], comments:[], followers:["m1","m3"] },
   ],
 };
 
@@ -117,9 +117,10 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
   const [tab,setTab]         = useState("details");
   const [asana,setAsana]     = useState(task.asanaLink||"");
   const [remarks,setRem]     = useState(task.remarks||"");
-  const [assigneeId,setAsgn] = useState(task.assigneeId||"");
-  const [due,setDue]         = useState(task.due||"");
-  const [comment,setCmt]     = useState("");
+  const [assigneeId,setAsgn]   = useState(task.assigneeId||"");
+  const [due,setDue]           = useState(task.due||"");
+  const [followers,setFollow]  = useState(task.followers||[]);
+  const [comment,setCmt]       = useState("");
   const [busy,setBusy]       = useState(false);
   const fileRef              = useRef();
 
@@ -215,7 +216,7 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
             <textarea value={remarks} onChange={e=>setRem(e.target.value)} placeholder="Add internal notes or context for this task..." rows={5} style={{width:"100%",background:C.card,border:`1px solid ${C.border2}`,borderRadius:10,padding:"10px 13px",color:C.text,fontSize:13,fontFamily:F,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
           </div>
 
-          <Btn full onClick={()=>patch({asanaLink:asana,remarks,assigneeId,due})}>Save Details</Btn>
+          <Btn full onClick={()=>patch({asanaLink:asana,remarks,assigneeId,due,followers})}>Save Details</Btn>
 
           <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:10,letterSpacing:.8}}>QUICK STATUS</div>
@@ -224,6 +225,25 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
                 <button key={k} onClick={()=>patch({status:k})} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${task.status===k?v.color+"66":C.border}`,background:task.status===k?v.bg:"transparent",color:task.status===k?v.color:C.muted2,fontSize:12,fontWeight:task.status===k?700:400,cursor:"pointer",fontFamily:F,transition:"all .15s"}}>{v.label}</button>
               ))}
             </div>
+          </div>
+
+          <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:10,letterSpacing:.8}}>FOLLOWERS</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+              {followers.length===0&&<span style={{fontSize:12,color:C.muted}}>No followers yet</span>}
+              {followers.map(fid=>{const fm=members.find(m=>m.id===fid);if(!fm)return null;return(
+                <div key={fid} style={{display:"flex",alignItems:"center",gap:5,background:C.surface,border:`1px solid ${C.border2}`,borderRadius:8,padding:"3px 8px 3px 5px"}}>
+                  <Avatar member={fm} size={18}/>
+                  <span style={{fontSize:11,color:C.text}}>{fm.name}</span>
+                  <button onClick={()=>setFollow(f=>f.filter(id=>id!==fid))} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,lineHeight:1,padding:0,marginLeft:2}}>×</button>
+                </div>
+              );})}
+            </div>
+            <select value="" onChange={e=>{if(e.target.value&&!followers.includes(e.target.value))setFollow(f=>[...f,e.target.value]);}}
+              style={{width:"100%",background:C.surface,border:`1px solid ${C.border2}`,borderRadius:8,padding:"6px 10px",color:C.muted2,fontSize:12,fontFamily:F,outline:"none",cursor:"pointer"}}>
+              <option value="">+ Add follower</option>
+              {members.filter(m=>!followers.includes(m.id)).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
           </div>
         </div>}
 
@@ -450,6 +470,134 @@ function MemberForm({onSave,onClose}){
   </>;
 }
 
+// ── KANBAN VIEW ───────────────────────────────────────────────────────────────
+function KanbanView({tasks,projects,members,onOpen,onStatusChange,onDelete,mobile}){
+  const [selProj,setSelProj]=useState("all");
+  const [dragId,setDragId]=useState(null);
+  const [dragOver,setDragOver]=useState(null);
+  const filtered=(selProj==="all"?tasks:tasks.filter(t=>t.projectId===selProj));
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
+      <div><h1 style={{fontSize:mobile?20:24,fontWeight:800,marginBottom:4}}>Kanban Board</h1><p style={{color:C.muted2,fontSize:13}}>{filtered.length} task{filtered.length!==1?"s":""}</p></div>
+      <select value={selProj} onChange={e=>setSelProj(e.target.value)} style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:8,color:C.text,padding:"8px 12px",fontSize:12,fontFamily:F,cursor:"pointer"}}>
+        <option value="all">All Projects</option>
+        {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:mobile?"1fr 1fr":"repeat(4,1fr)",gap:12}}>
+      {Object.entries(STATUS).map(([sk,si])=>{
+        const col=filtered.filter(t=>t.status===sk);
+        return <div key={sk}
+          onDragOver={e=>{e.preventDefault();setDragOver(sk);}}
+          onDragLeave={()=>setDragOver(null)}
+          onDrop={e=>{e.preventDefault();if(dragId)onStatusChange(dragId,sk);setDragId(null);setDragOver(null);}}
+          style={{background:dragOver===sk?si.color+"11":C.surface,border:`1px solid ${dragOver===sk?si.color+"66":C.border}`,borderRadius:12,padding:12,minHeight:160,transition:"all .15s"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:si.color,display:"inline-block"}}/><span style={{fontSize:12,fontWeight:700,color:si.color}}>{si.label}</span></div>
+            <span style={{fontSize:11,color:C.muted,background:C.border,borderRadius:10,padding:"1px 7px"}}>{col.length}</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {col.map(t=><div key={t.id} draggable onDragStart={()=>setDragId(t.id)} onDragEnd={()=>setDragId(null)} style={{cursor:"grab",opacity:dragId===t.id?.4:1,transition:"opacity .15s"}}>
+              <TaskCard task={t} members={members} projects={projects} onOpen={onOpen} onStatusChange={onStatusChange} onDelete={onDelete} isMobile={mobile}/>
+            </div>)}
+            {col.length===0&&<div style={{padding:"24px 12px",textAlign:"center",border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted,fontSize:12}}>Drop here</div>}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+// ── GANTT VIEW ────────────────────────────────────────────────────────────────
+function GanttView({tasks,projects,members,mobile}){
+  const [selProj,setSelProj]=useState("all");
+  const visTasks=(selProj==="all"?tasks:tasks.filter(t=>t.projectId===selProj)).filter(t=>t.due);
+  const toMs=d=>new Date(d).getTime();
+  const todayStr=today();
+
+  if(!visTasks.length)return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
+      <h1 style={{fontSize:mobile?20:24,fontWeight:800}}>Gantt Chart</h1>
+      <select value={selProj} onChange={e=>setSelProj(e.target.value)} style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:8,color:C.text,padding:"8px 12px",fontSize:12,fontFamily:F,cursor:"pointer"}}>
+        <option value="all">All Projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    </div>
+    <div style={{textAlign:"center",padding:"60px 20px",background:C.card,borderRadius:16,border:`1px dashed ${C.border2}`,color:C.muted2,fontSize:13}}>No tasks with due dates</div>
+  </div>;
+
+  const allMs=[...visTasks.map(t=>toMs(new Date(t.createdAt).toISOString().slice(0,10))),...visTasks.map(t=>toMs(t.due))];
+  const minMs=Math.min(...allMs)-864e5*3;
+  const maxMs=Math.max(...allMs)+864e5*6;
+  const range=maxMs-minMs;
+  const pct=ms=>Math.max(0,Math.min(100,((ms-minMs)/range)*100));
+  const todayPct=pct(toMs(todayStr));
+
+  const ticks=[];
+  const td=new Date(minMs); td.setDate(td.getDate()-td.getDay());
+  while(td.getTime()<maxMs){ticks.push({ms:td.getTime(),label:td.toLocaleDateString("en-IN",{day:"numeric",month:"short"})});td.setDate(td.getDate()+7);}
+
+  const grouped=projects.map(p=>({project:p,tasks:visTasks.filter(t=>t.projectId===p.id)})).filter(g=>g.tasks.length>0);
+
+  const rowH=44, hdrH=36, projH=32;
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
+      <div><h1 style={{fontSize:mobile?20:24,fontWeight:800,marginBottom:4}}>Gantt Chart</h1><p style={{color:C.muted2,fontSize:13}}>{visTasks.length} task{visTasks.length!==1?"s":""} with due dates</p></div>
+      <select value={selProj} onChange={e=>setSelProj(e.target.value)} style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:8,color:C.text,padding:"8px 12px",fontSize:12,fontFamily:F,cursor:"pointer"}}>
+        <option value="all">All Projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    </div>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden"}}>
+      <div style={{overflowX:"auto"}}>
+        <div style={{minWidth:640}}>
+          {/* Header */}
+          <div style={{display:"flex",height:hdrH,background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+            <div style={{width:180,flexShrink:0,borderRight:`1px solid ${C.border}`,display:"flex",alignItems:"center",padding:"0 14px"}}><span style={{fontSize:11,fontWeight:700,color:C.muted2,letterSpacing:.8}}>TASK</span></div>
+            <div style={{flex:1,position:"relative",overflow:"hidden"}}>
+              {ticks.map((tk,i)=><div key={i} style={{position:"absolute",left:`${pct(tk.ms)}%`,top:0,bottom:0,borderLeft:`1px solid ${C.border}`,paddingLeft:4,display:"flex",alignItems:"center"}}><span style={{fontSize:9,color:C.muted,whiteSpace:"nowrap"}}>{tk.label}</span></div>)}
+              {todayPct>=0&&todayPct<=100&&<div style={{position:"absolute",left:`${todayPct}%`,top:0,bottom:0,borderLeft:`2px solid ${C.accent}`,zIndex:2}}><span style={{position:"absolute",top:2,left:3,fontSize:9,color:C.accent,fontWeight:700,whiteSpace:"nowrap"}}>Today</span></div>}
+            </div>
+          </div>
+          {/* Rows */}
+          {grouped.map(g=><div key={g.project.id}>
+            <div style={{display:"flex",height:projH,background:C.surface,borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:180,flexShrink:0,borderRight:`1px solid ${C.border}`,padding:"0 14px",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:g.project.color,flexShrink:0,display:"inline-block"}}/>
+                <span style={{fontSize:11,fontWeight:700,color:g.project.color,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.project.name}</span>
+              </div>
+              <div style={{flex:1,position:"relative",height:"100%"}}>
+                {ticks.map((tk,i)=><div key={i} style={{position:"absolute",left:`${pct(tk.ms)}%`,top:0,bottom:0,borderLeft:`1px solid ${C.border}`}}/>)}
+                {todayPct>=0&&todayPct<=100&&<div style={{position:"absolute",left:`${todayPct}%`,top:0,bottom:0,borderLeft:`2px solid ${C.accent}`,zIndex:2}}/>}
+              </div>
+            </div>
+            {g.tasks.map(t=>{
+              const assignee=members.find(m=>m.id===t.assigneeId);
+              const startMs=toMs(new Date(t.createdAt).toISOString().slice(0,10));
+              const endMs=toMs(t.due);
+              const left=pct(startMs), width=Math.max(1,pct(endMs)-left);
+              const overdue=t.due<todayStr&&t.status!=="done";
+              const barColor=overdue?"#F04D5A":t.status==="done"?"#22C97A":g.project.color;
+              return <div key={t.id} style={{display:"flex",height:rowH,borderBottom:`1px solid ${C.border}`,alignItems:"center"}}>
+                <div style={{width:180,flexShrink:0,borderRight:`1px solid ${C.border}`,padding:"0 14px",display:"flex",alignItems:"center",gap:6}}>
+                  {assignee&&<Avatar member={assignee} size={20}/>}
+                  <span style={{fontSize:11,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{t.title}</span>
+                </div>
+                <div style={{flex:1,position:"relative",height:"100%"}}>
+                  {ticks.map((tk,i)=><div key={i} style={{position:"absolute",left:`${pct(tk.ms)}%`,top:0,bottom:0,borderLeft:`1px solid ${C.border}`}}/>)}
+                  {todayPct>=0&&todayPct<=100&&<div style={{position:"absolute",left:`${todayPct}%`,top:0,bottom:0,borderLeft:`2px solid ${C.accent}`,zIndex:2}}/>}
+                  <div title={`${t.title} · ${new Date(startMs).toLocaleDateString()} → ${t.due}`}
+                    style={{position:"absolute",left:`${left}%`,width:`${width}%`,top:"22%",height:"56%",background:barColor+"cc",borderRadius:6,display:"flex",alignItems:"center",padding:"0 6px",minWidth:6,overflow:"hidden",cursor:"default"}}>
+                    {width>8&&<span style={{fontSize:10,color:"#fff",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</span>}
+                  </div>
+                </div>
+              </div>;
+            })}
+          </div>)}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [data,setData]       = useState(loadData);
@@ -522,7 +670,7 @@ export default function App(){
   };
   const nav=v=>{setView(v);setSelProj(null);};
 
-  const navItems=[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"projects",icon:"◈",label:"Projects"},{id:"tasks",icon:"✓",label:"Tasks"},{id:"team",icon:"◎",label:"Team"}];
+  const navItems=[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"projects",icon:"◈",label:"Projects"},{id:"tasks",icon:"✓",label:"Tasks"},{id:"kanban",icon:"⋮",label:"Kanban"},{id:"gantt",icon:"━",label:"Gantt"},{id:"team",icon:"◎",label:"Team"}];
 
   if(!user)return <LoginScreen members={members} onLogin={setUser}/>;
 
@@ -685,6 +833,12 @@ export default function App(){
           </div>
         )}
       </div>}
+
+      {/* KANBAN */}
+      {view==="kanban"&&<KanbanView tasks={visTasks} projects={visProjs} members={members} onOpen={setOpen} onStatusChange={chgStatus} onDelete={delTask} mobile={mobile}/>}
+
+      {/* GANTT */}
+      {view==="gantt"&&<GanttView tasks={visTasks} projects={visProjs} members={members} mobile={mobile}/>}
 
       {/* TEAM */}
       {view==="team"&&<div>
