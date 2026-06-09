@@ -118,6 +118,7 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
   const [asana,setAsana]     = useState(task.asanaLink||"");
   const [remarks,setRem]     = useState(task.remarks||"");
   const [assigneeId,setAsgn] = useState(task.assigneeId||"");
+  const [due,setDue]         = useState(task.due||"");
   const [comment,setCmt]     = useState("");
   const [busy,setBusy]       = useState(false);
   const fileRef              = useRef();
@@ -195,8 +196,9 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
               </div>
             </div>
             <div style={{background:C.card,borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:10,color:C.muted,marginBottom:6,letterSpacing:.8}}>DUE DATE</div>
-              <div style={{fontSize:13,color:overdue?"#F04D5A":C.text,fontWeight:overdue?700:400}}>{task.due||"—"}</div>
+              <div style={{fontSize:10,color:C.muted,marginBottom:8,letterSpacing:.8}}>DUE DATE</div>
+              <input type="date" value={due} onChange={e=>setDue(e.target.value)}
+                style={{width:"100%",background:C.surface,border:`1px solid ${C.border2}`,borderRadius:8,padding:"5px 8px",color:due&&due<today()&&task.status!=="done"?"#F04D5A":C.text,fontSize:12,fontFamily:F,outline:"none",cursor:"pointer"}}/>
             </div>
           </div>
 
@@ -213,7 +215,7 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
             <textarea value={remarks} onChange={e=>setRem(e.target.value)} placeholder="Add internal notes or context for this task..." rows={5} style={{width:"100%",background:C.card,border:`1px solid ${C.border2}`,borderRadius:10,padding:"10px 13px",color:C.text,fontSize:13,fontFamily:F,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
           </div>
 
-          <Btn full onClick={()=>patch({asanaLink:asana,remarks,assigneeId})}>Save Details</Btn>
+          <Btn full onClick={()=>patch({asanaLink:asana,remarks,assigneeId,due})}>Save Details</Btn>
 
           <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:10,letterSpacing:.8}}>QUICK STATUS</div>
