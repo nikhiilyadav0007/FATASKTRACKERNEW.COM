@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
 const STORAGE_KEY = "projectpulse_v4";
+const SHEETS_KEY   = "projectpulse_sheets_url";
 const defaultData = {
   members: [
     { id:"m0", name:"Admin User", initials:"AU", color:"#F04D5A", role:"admin",  email:"admin@demo.com",  password:"admin123"  },
@@ -682,6 +683,8 @@ export default function App(){
   const [tf,setTF]           = useState({status:"all",priority:"all",assignee:"all"});
   const [mobile,setMobile]   = useState(window.innerWidth<768);
   const [toast,setToast]     = useState(null);
+  const [sheetsModal,setSheetsModal]   = useState(false);
+  const [sheetsInput,setSheetsInput]   = useState(()=>localStorage.getItem(SHEETS_KEY)||"");
   const [sharedTask,setSharedTask] = useState(()=>{
     try{
       const h=window.location.hash;
@@ -695,6 +698,17 @@ export default function App(){
   useEffect(()=>{if(openTask){const t=data.tasks.find(t=>t.id===openTask.id);if(t)setOpen(t);}},[data.tasks]);
 
   const toast$=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),2800);};
+
+  const logToSheets=(type,task,changes="")=>{
+    const url=localStorage.getItem(SHEETS_KEY);
+    if(!url)return;
+    const proj=data.projects.find(p=>p.id===task.projectId);
+    const asgn=data.members.find(m=>m.id===task.assigneeId);
+    const ts=new Date().toLocaleString("en-IN",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+    fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({type,timestamp:ts,taskId:task.id,title:task.title,project:proj?.name||"",assignee:asgn?.name||"Unassigned",status:STATUS[task.status]?.label||task.status,priority:PRIORITY[task.priority]?.label||task.priority,due:task.due||"",remarks:task.remarks||"",changes})
+    }).catch(()=>{});
+  };
 
   const {projects,tasks,members}=data;
   const isAdmin=user?.role==="admin";
@@ -714,17 +728,31 @@ export default function App(){
   })();
 
   const upsertTask=(form,eid)=>{
-    setData(d=>{
-      const base=eid?d.tasks.find(t=>t.id===eid):{id:uid(),asanaLink:"",remarks:"",attachments:[],comments:[],createdAt:Date.now()};
-      const tasks=eid?d.tasks.map(t=>t.id===eid?{...base,...form}:t):[...d.tasks,{...base,...form}];
-      return {...d,tasks};
-    });
+    const base=eid?data.tasks.find(t=>t.id===eid):{id:uid(),asanaLink:"",remarks:"",attachments:[],comments:[],createdAt:Date.now(),followers:[]};
+    const newTask={...base,...form};
+    setData(d=>{const tasks=eid?d.tasks.map(t=>t.id===eid?newTask:t):[...d.tasks,newTask];return {...d,tasks};});
+    if(!eid) logToSheets("new_task",newTask);
     toast$(eid?"Task updated":"Task created"); setModal(null);
   };
 
-  const updateTask=updated=>{setData(d=>({...d,tasks:d.tasks.map(t=>t.id===updated.id?updated:t)}));toast$("Saved");};
+  const updateTask=updated=>{
+    const old=data.tasks.find(t=>t.id===updated.id);
+    const changes=[];
+    if(old?.status!==updated.status)changes.push(`Status: ${STATUS[old?.status]?.label} → ${STATUS[updated.status]?.label}`);
+    if(old?.remarks!==updated.remarks)changes.push("Remarks updated");
+    if(old?.assigneeId!==updated.assigneeId){const oa=data.members.find(m=>m.id===old?.assigneeId),na=data.members.find(m=>m.id===updated.assigneeId);changes.push(`Assignee: ${oa?.name||"Unassigned"} → ${na?.name||"Unassigned"}`);}
+    if(old?.due!==updated.due)changes.push(`Due: ${old?.due||"—"} → ${updated.due||"—"}`);
+    setData(d=>({...d,tasks:d.tasks.map(t=>t.id===updated.id?updated:t)}));
+    if(changes.length)logToSheets("update",updated,changes.join(" | "));
+    toast$("Saved");
+  };
   const delTask=id=>{setData(d=>({...d,tasks:d.tasks.filter(t=>t.id!==id)}));if(openTask?.id===id)setOpen(null);toast$("Deleted","info");};
-  const chgStatus=(id,status)=>{setData(d=>({...d,tasks:d.tasks.map(t=>t.id===id?{...t,status}:t)}));toast$(status==="done"?"Done! ✓":"Updated");};
+  const chgStatus=(id,status)=>{
+    const task=data.tasks.find(t=>t.id===id);
+    setData(d=>({...d,tasks:d.tasks.map(t=>t.id===id?{...t,status}:t)}));
+    if(task)logToSheets("update",{...task,status},`Status → ${STATUS[status]?.label}`);
+    toast$(status==="done"?"Done! ✓":"Updated");
+  };
 
   const upsertProj=(form,eid)=>{
     const admins=members.filter(m=>m.role==="admin").map(m=>m.id);
@@ -784,6 +812,7 @@ export default function App(){
         ))}
         <div style={{marginTop:12,padding:"10px 6px",borderTop:`1px solid ${C.border}`}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Avatar member={user} size={26}/><div><div style={{fontSize:12,fontWeight:700}}>{user.name}</div><div style={{fontSize:10,color:isAdmin?"#F59E0B":C.muted}}>{isAdmin?"Admin":"Member"}</div></div></div>
+          {isAdmin&&<Btn small variant={localStorage.getItem(SHEETS_KEY)?"success":"ghost"} full onClick={()=>setSheetsModal(true)} style={{marginBottom:6}}>📊 Google Sheets</Btn>}
           <Btn small variant="ghost" full onClick={()=>setUser(null)}>Switch User</Btn>
         </div>
       </div>
@@ -959,6 +988,51 @@ export default function App(){
     {modal?.type==="new-task"     &&<Modal title="New Task"        onClose={()=>setModal(null)}><TaskForm task={modal.payload} projects={visProjs} members={members} onSave={f=>upsertTask(f,null)} onClose={()=>setModal(null)}/></Modal>}
     {modal?.type==="edit-task"    &&<Modal title="Edit Task"       onClose={()=>setModal(null)}><TaskForm task={modal.payload} projects={visProjs} members={members} onSave={f=>upsertTask(f,modal.payload.id)} onClose={()=>setModal(null)}/></Modal>}
     {modal?.type==="new-member"   &&<Modal title="Add Team Member" onClose={()=>setModal(null)} width={360}><MemberForm onSave={addMember} onClose={()=>setModal(null)}/></Modal>}
+
+    {/* GOOGLE SHEETS MODAL */}
+    {sheetsModal&&<Modal title="Google Sheets Integration" onClose={()=>setSheetsModal(false)} width={520}>
+      <div style={{marginBottom:14,padding:"12px 14px",background:C.surface,borderRadius:10,border:`1px solid ${C.border2}`}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:6,letterSpacing:.8}}>SETUP INSTRUCTIONS</div>
+        <div style={{fontSize:12,color:C.muted2,lineHeight:1.7}}>
+          1. Open a Google Sheet → Extensions → Apps Script<br/>
+          2. Paste the Apps Script code (see below), click Save &amp; Deploy<br/>
+          3. Deploy as <b style={{color:C.text}}>Web App</b> → Execute as: <b style={{color:C.text}}>Me</b> → Who has access: <b style={{color:C.text}}>Anyone</b><br/>
+          4. Copy the web app URL and paste below
+        </div>
+      </div>
+      <div style={{marginBottom:14,padding:"10px 14px",background:"#0a0f1a",borderRadius:10,border:`1px solid ${C.border}`,fontFamily:"monospace",fontSize:11,color:"#22C97A",lineHeight:1.6,overflowX:"auto",whiteSpace:"pre"}}>
+{`function doPost(e) {
+  const d = JSON.parse(e.postData.contents);
+  let sh = SpreadsheetApp.getActiveSpreadsheet()
+             .getSheetByName("ProjectPulse");
+  if (!sh) {
+    sh = SpreadsheetApp.getActiveSpreadsheet()
+           .insertSheet("ProjectPulse");
+    sh.appendRow(["Timestamp","Type","Task ID",
+      "Title","Project","Assignee","Status",
+      "Priority","Due","Remarks","Changes"]);
+    sh.getRange(1,1,1,11)
+      .setFontWeight("bold")
+      .setBackground("#4F8EF7")
+      .setFontColor("#fff");
+  }
+  sh.appendRow([d.timestamp,
+    d.type==="new_task"?"NEW TASK":"UPDATE",
+    d.taskId, d.title, d.project, d.assignee,
+    d.status, d.priority, d.due,
+    d.remarks, d.changes||""]);
+  return ContentService
+    .createTextResponse("OK");
+}`}
+      </div>
+      <Inp label="Apps Script Web App URL" value={sheetsInput} onChange={setSheetsInput} placeholder="https://script.google.com/macros/s/.../exec"/>
+      {localStorage.getItem(SHEETS_KEY)&&<div style={{fontSize:11,color:"#22C97A",marginBottom:10,marginTop:-6}}>✓ Connected — updates are being logged</div>}
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        {localStorage.getItem(SHEETS_KEY)&&<Btn variant="danger" small onClick={()=>{localStorage.removeItem(SHEETS_KEY);setSheetsInput("");setSheetsModal(false);toast$("Sheets disconnected","info");}}>Disconnect</Btn>}
+        <Btn variant="ghost" onClick={()=>setSheetsModal(false)}>Cancel</Btn>
+        <Btn disabled={!sheetsInput.trim()} onClick={()=>{localStorage.setItem(SHEETS_KEY,sheetsInput.trim());setSheetsModal(false);toast$("Google Sheets connected");}}>Save &amp; Connect</Btn>
+      </div>
+    </Modal>}
 
     {/* TASK DRAWER */}
     {openTask&&<TaskDrawer task={openTask} members={members} projects={visProjs} currentUser={user} onClose={()=>setOpen(null)} onUpdate={updateTask} isMobile={mobile}/>}
