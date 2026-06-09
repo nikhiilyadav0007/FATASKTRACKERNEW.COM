@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import jsPDF from "jspdf";
 
 const STORAGE_KEY = "projectpulse_v4";
 const defaultData = {
@@ -131,6 +132,69 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
 
   const patch = (obj) => onUpdate({...task,...obj});
 
+  const shareWhatsApp = () => {
+    const asgn=members.find(m=>m.id===task.assigneeId);
+    const proj=projects.find(p=>p.id===task.projectId);
+    const followerNames=(task.followers||[]).map(id=>members.find(m=>m.id===id)?.name).filter(Boolean).join(", ");
+    const lines=[
+      `*ProjectPulse — Task Details*`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `*${task.title}*`,``,
+      `📁 *Project:* ${proj?.name||"—"}`,
+      `👤 *Assignee:* ${asgn?.name||"Unassigned"}`,
+      `📅 *Due Date:* ${task.due||"—"}`,
+      `🔵 *Status:* ${STATUS[task.status]?.label}`,
+      `⚡ *Priority:* ${PRIORITY[task.priority]?.label}`,
+    ];
+    if(followerNames)lines.push(`👥 *Followers:* ${followerNames}`);
+    if(task.remarks)lines.push(``,`📝 *Notes:* ${task.remarks}`);
+    if(task.asanaLink)lines.push(``,`🔗 *Asana:* ${task.asanaLink}`);
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`,"_blank");
+  };
+
+  const downloadPDF = () => {
+    const doc=new jsPDF();
+    const asgn=members.find(m=>m.id===task.assigneeId);
+    const proj=projects.find(p=>p.id===task.projectId);
+    const followerNames=(task.followers||[]).map(id=>members.find(m=>m.id===id)?.name).filter(Boolean).join(", ");
+    let y=20;
+    // Header bar
+    doc.setFillColor(8,11,18); doc.rect(0,0,210,28,"F");
+    doc.setFontSize(14); doc.setFont("helvetica","bold"); doc.setTextColor(255,255,255);
+    doc.text("ProjectPulse",14,18);
+    y=42;
+    // Title
+    doc.setFontSize(15); doc.setFont("helvetica","bold"); doc.setTextColor(20,20,20);
+    const titleLines=doc.splitTextToSize(task.title,176);
+    doc.text(titleLines,14,y); y+=titleLines.length*8+4;
+    // Divider
+    doc.setDrawColor(200,200,200); doc.line(14,y,196,y); y+=8;
+    // Fields
+    const field=(label,value)=>{
+      if(!value)return;
+      doc.setFontSize(10); doc.setFont("helvetica","bold"); doc.setTextColor(120,120,120);
+      doc.text(label,14,y);
+      doc.setFont("helvetica","normal"); doc.setTextColor(30,30,30);
+      doc.text(String(value),75,y); y+=7;
+    };
+    field("Project",proj?.name||"—");
+    field("Assignee",asgn?.name||"Unassigned");
+    field("Due Date",task.due||"—");
+    field("Status",STATUS[task.status]?.label);
+    field("Priority",PRIORITY[task.priority]?.label);
+    if(followerNames)field("Followers",followerNames);
+    if(task.asanaLink)field("Asana Link",task.asanaLink);
+    if(task.remarks){
+      y+=4; doc.setDrawColor(220,220,220); doc.line(14,y,196,y); y+=8;
+      doc.setFontSize(10); doc.setFont("helvetica","bold"); doc.setTextColor(120,120,120);
+      doc.text("REMARKS / NOTES",14,y); y+=7;
+      doc.setFont("helvetica","normal"); doc.setTextColor(30,30,30); doc.setFontSize(11);
+      const rem=doc.splitTextToSize(task.remarks,176);
+      doc.text(rem,14,y); y+=rem.length*6;
+    }
+    doc.save(`${task.title.replace(/\s+/g,"-").toLowerCase()}.pdf`);
+  };
+
   const addComment = () => {
     if(!comment.trim())return;
     patch({comments:[...(task.comments||[]),{id:uid(),authorId:currentUser.id,text:comment.trim(),createdAt:Date.now()}]});
@@ -165,10 +229,14 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
           </div>
           <button onClick={onClose} style={{background:C.border,border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",color:C.muted2,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>x</button>
         </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
           <Pill label={st.label} color={st.color} bg={st.bg} small/>
           <Pill label={pr.label} color={pr.color} bg={pr.bg} small/>
           {overdue&&<Pill label="Overdue" color="#F04D5A" bg="rgba(240,77,90,.12)" small/>}
+          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+            <button onClick={shareWhatsApp} title="Share on WhatsApp" style={{background:"rgba(37,211,102,.12)",border:"1px solid rgba(37,211,102,.35)",borderRadius:8,padding:"4px 10px",cursor:"pointer",color:"#25D366",fontSize:11,fontWeight:700,fontFamily:F,display:"flex",alignItems:"center",gap:4}}>📱 WhatsApp</button>
+            <button onClick={downloadPDF} title="Download PDF" style={{background:"rgba(240,77,90,.12)",border:"1px solid rgba(240,77,90,.3)",borderRadius:8,padding:"4px 10px",cursor:"pointer",color:"#F04D5A",fontSize:11,fontWeight:700,fontFamily:F,display:"flex",alignItems:"center",gap:4}}>📄 PDF</button>
+          </div>
         </div>
       </div>
 
