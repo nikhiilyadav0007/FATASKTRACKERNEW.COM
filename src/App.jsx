@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 
-const STORAGE_KEY = "projectpulse_v2";
+const STORAGE_KEY = "projectpulse_v3";
 const defaultData = {
   members: [
-    { id:"m0", name:"Admin User", initials:"AU", color:"#F04D5A", role:"admin" },
-    { id:"m1", name:"Neel K.",    initials:"NK", color:"#4F8EF7", role:"member" },
-    { id:"m2", name:"Priya R.",   initials:"PR", color:"#A78BFA", role:"member" },
-    { id:"m3", name:"Arjun S.",   initials:"AS", color:"#22C97A", role:"member" },
-    { id:"m4", name:"Riya M.",    initials:"RM", color:"#F59E0B", role:"member" },
+    { id:"m0", name:"Admin User", initials:"AU", color:"#F04D5A", role:"admin",  email:"admin@demo.com",  password:"admin123"  },
+    { id:"m1", name:"Neel K.",    initials:"NK", color:"#4F8EF7", role:"member", email:"neel@demo.com",   password:"member123" },
+    { id:"m2", name:"Priya R.",   initials:"PR", color:"#A78BFA", role:"member", email:"priya@demo.com",  password:"member123" },
+    { id:"m3", name:"Arjun S.",   initials:"AS", color:"#22C97A", role:"member", email:"arjun@demo.com",  password:"member123" },
+    { id:"m4", name:"Riya M.",    initials:"RM", color:"#F59E0B", role:"member", email:"riya@demo.com",   password:"member123" },
   ],
   projects: [
     { id:"p1", name:"Brand Revamp",  color:"#4F8EF7", description:"Full brand identity refresh for Q3", createdAt:Date.now()-864e5*5, memberIds:["m0","m1","m2"] },
@@ -84,40 +84,43 @@ function Modal({title,onClose,children,width=440}){
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 function LoginScreen({members,onLogin}){
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [err,setErr]=useState("");
+
+  const handleLogin=()=>{
+    const m=members.find(x=>x.email?.toLowerCase()===email.trim().toLowerCase());
+    if(!m||m.password!==pass){setErr("Invalid email or password");return;}
+    onLogin(m);
+  };
+
   return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F,padding:20}}>
     <div style={{width:"100%",maxWidth:400}}>
       <div style={{textAlign:"center",marginBottom:36}}>
         <div style={{width:52,height:52,borderRadius:14,background:`linear-gradient(135deg,${C.accent},#7B5CF0)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,margin:"0 auto 14px",color:"#fff"}}>P</div>
         <div style={{fontSize:24,fontWeight:800,color:C.text}}>ProjectPulse</div>
-        <div style={{fontSize:13,color:C.muted2,marginTop:4}}>Choose your account to continue</div>
+        <div style={{fontSize:13,color:C.muted2,marginTop:4}}>Sign in to your workspace</div>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {members.map(m=>(
-          <button key={m.id} onClick={()=>onLogin(m)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",background:C.card,border:`1px solid ${C.border}`,borderRadius:14,cursor:"pointer",color:C.text,fontFamily:F,width:"100%",transition:"all .18s"}}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-            <Avatar member={m} size={38}/>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontSize:14,fontWeight:700}}>{m.name}</div>
-              <div style={{fontSize:11,color:C.muted2,marginTop:2}}>{m.role==="admin"?"Admin · All projects":"Team Member"}</div>
-            </div>
-            {m.role==="admin"&&<span style={{marginLeft:"auto",fontSize:10,color:"#F59E0B",background:"rgba(245,158,11,.12)",padding:"2px 8px",borderRadius:10,fontWeight:700}}>ADMIN</span>}
-          </button>
-        ))}
+      <div style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:18,padding:24}}>
+        <Inp label="Email" value={email} onChange={v=>{setEmail(v);setErr("");}} placeholder="you@example.com" type="email"/>
+        <Inp label="Password" value={pass} onChange={v=>{setPass(v);setErr("");}} placeholder="••••••••" type="password"/>
+        {err&&<div style={{color:"#F04D5A",fontSize:12,marginBottom:12,marginTop:-6}}>{err}</div>}
+        <Btn full onClick={handleLogin} disabled={!email.trim()||!pass}>Sign In</Btn>
       </div>
-      <div style={{textAlign:"center",marginTop:20,fontSize:11,color:C.muted}}>Demo mode · Data stored in your browser</div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:C.muted}}>Demo · admin@demo.com / admin123</div>
     </div>
   </div>;
 }
 
 // ── TASK DRAWER ───────────────────────────────────────────────────────────────
 function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile}){
-  const [tab,setTab]       = useState("details");
-  const [asana,setAsana]   = useState(task.asanaLink||"");
-  const [remarks,setRem]   = useState(task.remarks||"");
-  const [comment,setCmt]   = useState("");
-  const [busy,setBusy]     = useState(false);
-  const fileRef            = useRef();
+  const [tab,setTab]         = useState("details");
+  const [asana,setAsana]     = useState(task.asanaLink||"");
+  const [remarks,setRem]     = useState(task.remarks||"");
+  const [assigneeId,setAsgn] = useState(task.assigneeId||"");
+  const [comment,setCmt]     = useState("");
+  const [busy,setBusy]       = useState(false);
+  const fileRef              = useRef();
 
   const member  = members.find(m=>m.id===task.assigneeId);
   const project = projects.find(p=>p.id===task.projectId);
@@ -181,8 +184,15 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
         {tab==="details"&&<div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
             <div style={{background:C.card,borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:10,color:C.muted,marginBottom:6,letterSpacing:.8}}>ASSIGNEE</div>
-              {member?<div style={{display:"flex",alignItems:"center",gap:8}}><Avatar member={member} size={24}/><span style={{fontSize:13,color:C.text}}>{member.name}</span></div>:<span style={{fontSize:12,color:C.muted}}>Unassigned</span>}
+              <div style={{fontSize:10,color:C.muted,marginBottom:8,letterSpacing:.8}}>ASSIGNEE</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {members.find(m=>m.id===assigneeId)&&<Avatar member={members.find(m=>m.id===assigneeId)} size={22}/>}
+                <select value={assigneeId} onChange={e=>setAsgn(e.target.value)}
+                  style={{flex:1,background:C.surface,border:`1px solid ${C.border2}`,borderRadius:8,padding:"5px 8px",color:C.text,fontSize:12,fontFamily:F,outline:"none",cursor:"pointer"}}>
+                  <option value="">Unassigned</option>
+                  {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
             </div>
             <div style={{background:C.card,borderRadius:10,padding:"12px 14px"}}>
               <div style={{fontSize:10,color:C.muted,marginBottom:6,letterSpacing:.8}}>DUE DATE</div>
@@ -203,7 +213,7 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
             <textarea value={remarks} onChange={e=>setRem(e.target.value)} placeholder="Add internal notes or context for this task..." rows={5} style={{width:"100%",background:C.card,border:`1px solid ${C.border2}`,borderRadius:10,padding:"10px 13px",color:C.text,fontSize:13,fontFamily:F,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
           </div>
 
-          <Btn full onClick={()=>patch({asanaLink:asana,remarks})}>Save Details</Btn>
+          <Btn full onClick={()=>patch({asanaLink:asana,remarks,assigneeId})}>Save Details</Btn>
 
           <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:10,letterSpacing:.8}}>QUICK STATUS</div>
@@ -417,11 +427,14 @@ function ProjectForm({project,allMembers,onSave,onClose}){
 }
 
 function MemberForm({onSave,onClose}){
-  const [f,setF]=useState({name:"",color:PROJECT_COLORS[2],role:"member"});
+  const [f,setF]=useState({name:"",email:"",password:"",color:PROJECT_COLORS[2],role:"member"});
   const initials=f.name.trim().split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
   const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  const valid=f.name.trim()&&f.email.trim()&&f.password.trim();
   return <>
     <Inp label="Full Name" value={f.name} onChange={v=>s("name",v)} placeholder="e.g. Rohan Verma" required/>
+    <Inp label="Email" value={f.email} onChange={v=>s("email",v)} placeholder="rohan@company.com" type="email" required/>
+    <Inp label="Password" value={f.password} onChange={v=>s("password",v)} placeholder="Set a password" type="password" required/>
     <Inp label="Role" value={f.role} onChange={v=>s("role",v)} options={[{value:"member",label:"Team Member"},{value:"admin",label:"Admin"}]}/>
     <div style={{marginBottom:18}}>
       <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:8,letterSpacing:.8,fontFamily:F}}>AVATAR COLOR</div>
@@ -430,7 +443,7 @@ function MemberForm({onSave,onClose}){
     {f.name&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:C.surface,borderRadius:10,marginBottom:14}}><Avatar member={{initials,color:f.color}} size={36}/><span style={{fontSize:13,color:C.text,fontFamily:F}}>{f.name}</span></div>}
     <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
       <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-      <Btn disabled={!f.name.trim()} onClick={()=>onSave({name:f.name,initials,color:f.color,role:f.role})}>Add Member</Btn>
+      <Btn disabled={!valid} onClick={()=>onSave({name:f.name,initials,color:f.color,role:f.role,email:f.email,password:f.password})}>Add Member</Btn>
     </div>
   </>;
 }
@@ -499,6 +512,12 @@ export default function App(){
   };
 
   const addMember=form=>{setData(d=>({...d,members:[...d.members,{id:uid(),...form}]}));toast$("Member added");setModal(null);};
+  const delMember=id=>{
+    const admins=members.filter(m=>m.role==="admin");
+    if(admins.length===1&&admins[0].id===id){toast$("Cannot delete the last admin","info");return;}
+    setData(d=>({...d,members:d.members.filter(m=>m.id!==id)}));
+    toast$("Member removed","info");
+  };
   const nav=v=>{setView(v);setSelProj(null);};
 
   const navItems=[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"projects",icon:"◈",label:"Projects"},{id:"tasks",icon:"✓",label:"Tasks"},{id:"team",icon:"◎",label:"Team"}];
@@ -675,7 +694,8 @@ export default function App(){
           {members.map(m=>{
             const mt=tasks.filter(t=>t.assigneeId===m.id),mdone=mt.filter(t=>t.status==="done").length;
             const mprojs=[...new Set(mt.map(t=>t.projectId))].map(id=>projects.find(p=>p.id===id)).filter(Boolean);
-            return <div key={m.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:18,textAlign:"center"}}>
+            return <div key={m.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:18,textAlign:"center",position:"relative"}}>
+              {isAdmin&&m.id!==user.id&&<button onClick={()=>delMember(m.id)} title="Remove member" style={{position:"absolute",top:10,right:10,background:"rgba(240,77,90,.1)",border:"1px solid rgba(240,77,90,.2)",borderRadius:6,width:24,height:24,cursor:"pointer",color:"#F04D5A",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>}
               <Avatar member={m} size={48}/>
               <div style={{marginTop:10,marginBottom:6}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.text}}>{m.name}</div>
