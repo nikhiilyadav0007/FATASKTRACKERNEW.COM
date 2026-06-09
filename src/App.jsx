@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 const STORAGE_KEY = "projectpulse_v4";
 const defaultData = {
@@ -45,6 +46,56 @@ const PRIORITY = {
 const PROJECT_COLORS = ["#4F8EF7","#22C97A","#A78BFA","#F59E0B","#F04D5A","#38BDF8","#FB923C","#34D399"];
 const C = { bg:"#080B12",surface:"#0E1320",card:"#131929",cardHov:"#172035",border:"#1C2640",border2:"#242E4A",accent:"#4F8EF7",text:"#E2E8F8",muted:"#5A6A8A",muted2:"#8896B0" };
 const F = "'Syne',sans-serif";
+
+// ── SHARE HELPERS ─────────────────────────────────────────────────────────────
+function makeShareURL(task,members,projects){
+  const asgn=members.find(m=>m.id===task.assigneeId);
+  const proj=projects.find(p=>p.id===task.projectId);
+  const followerNames=(task.followers||[]).map(id=>members.find(m=>m.id===id)?.name).filter(Boolean).join(", ");
+  const d={
+    title:task.title,
+    project:proj?.name||"",
+    assignee:asgn?.name||"Unassigned",
+    status:STATUS[task.status]?.label||"",
+    priority:PRIORITY[task.priority]?.label||"",
+    due:task.due||"",
+    remarks:task.remarks||"",
+    asanaLink:task.asanaLink||"",
+    followers:followerNames,
+  };
+  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(d))));
+  return `${window.location.origin}${window.location.pathname}#task=${encoded}`;
+}
+
+function SharedTaskView({data,onClose}){
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,backdropFilter:"blur(8px)",fontFamily:F}} onClick={onClose}>
+    <div style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:18,width:"100%",maxWidth:460,maxHeight:"90vh",overflow:"auto",boxShadow:"0 32px 80px rgba(0,0,0,.7)",animation:"slideUp .22s ease"}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:`linear-gradient(135deg,${C.accent},#7B5CF0)`,borderRadius:"18px 18px 0 0",padding:"18px 22px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginBottom:4,letterSpacing:.8}}>SHARED VIA PROJECTPULSE</div>
+          <div style={{fontSize:16,fontWeight:800,color:"#fff",lineHeight:1.3}}>{data.title}</div>
+        </div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,width:28,height:28,cursor:"pointer",color:"#fff",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>×</button>
+      </div>
+      <div style={{padding:"18px 22px 22px"}}>
+        {[["Project",data.project],["Assignee",data.assignee],["Due Date",data.due],["Status",data.status],["Priority",data.priority],["Followers",data.followers]].filter(([,v])=>v).map(([k,v])=>(
+          <div key={k} style={{display:"flex",gap:12,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:10,fontWeight:700,color:C.muted2,width:76,flexShrink:0,letterSpacing:.8,paddingTop:2}}>{k.toUpperCase()}</span>
+            <span style={{fontSize:13,color:C.text}}>{v}</span>
+          </div>
+        ))}
+        {data.remarks&&<div style={{marginTop:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted2,marginBottom:6,letterSpacing:.8}}>REMARKS</div>
+          <div style={{fontSize:13,color:C.text,lineHeight:1.5,background:C.surface,borderRadius:10,padding:"10px 14px"}}>{data.remarks}</div>
+        </div>}
+        {data.asanaLink&&<div style={{marginTop:14}}>
+          <a href={data.asanaLink} target="_blank" rel="noreferrer" style={{fontSize:12,color:C.accent,display:"inline-flex",alignItems:"center",gap:4}}>Open in Asana ↗</a>
+        </div>}
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${C.border}`,fontSize:11,color:C.muted,textAlign:"center"}}>Open ProjectPulse to manage this task</div>
+      </div>
+    </div>
+  </div>;
+}
 
 // ── ATOMS ─────────────────────────────────────────────────────────────────────
 function Pill({label,color,bg,small}){
@@ -132,66 +183,20 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
 
   const patch = (obj) => onUpdate({...task,...obj});
 
+  const panelRef = useRef();
+
   const shareWhatsApp = () => {
-    const asgn=members.find(m=>m.id===task.assigneeId);
-    const proj=projects.find(p=>p.id===task.projectId);
-    const followerNames=(task.followers||[]).map(id=>members.find(m=>m.id===id)?.name).filter(Boolean).join(", ");
-    const lines=[
-      `*ProjectPulse — Task Details*`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `*${task.title}*`,``,
-      `📁 *Project:* ${proj?.name||"—"}`,
-      `👤 *Assignee:* ${asgn?.name||"Unassigned"}`,
-      `📅 *Due Date:* ${task.due||"—"}`,
-      `🔵 *Status:* ${STATUS[task.status]?.label}`,
-      `⚡ *Priority:* ${PRIORITY[task.priority]?.label}`,
-    ];
-    if(followerNames)lines.push(`👥 *Followers:* ${followerNames}`);
-    if(task.remarks)lines.push(``,`📝 *Notes:* ${task.remarks}`);
-    if(task.asanaLink)lines.push(``,`🔗 *Asana:* ${task.asanaLink}`);
-    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`,"_blank");
+    const url=makeShareURL(task,members,projects);
+    const text=`📋 *${task.title}*\nView task on ProjectPulse:\n${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
   };
 
-  const downloadPDF = () => {
-    const doc=new jsPDF();
-    const asgn=members.find(m=>m.id===task.assigneeId);
-    const proj=projects.find(p=>p.id===task.projectId);
-    const followerNames=(task.followers||[]).map(id=>members.find(m=>m.id===id)?.name).filter(Boolean).join(", ");
-    let y=20;
-    // Header bar
-    doc.setFillColor(8,11,18); doc.rect(0,0,210,28,"F");
-    doc.setFontSize(14); doc.setFont("helvetica","bold"); doc.setTextColor(255,255,255);
-    doc.text("ProjectPulse",14,18);
-    y=42;
-    // Title
-    doc.setFontSize(15); doc.setFont("helvetica","bold"); doc.setTextColor(20,20,20);
-    const titleLines=doc.splitTextToSize(task.title,176);
-    doc.text(titleLines,14,y); y+=titleLines.length*8+4;
-    // Divider
-    doc.setDrawColor(200,200,200); doc.line(14,y,196,y); y+=8;
-    // Fields
-    const field=(label,value)=>{
-      if(!value)return;
-      doc.setFontSize(10); doc.setFont("helvetica","bold"); doc.setTextColor(120,120,120);
-      doc.text(label,14,y);
-      doc.setFont("helvetica","normal"); doc.setTextColor(30,30,30);
-      doc.text(String(value),75,y); y+=7;
-    };
-    field("Project",proj?.name||"—");
-    field("Assignee",asgn?.name||"Unassigned");
-    field("Due Date",task.due||"—");
-    field("Status",STATUS[task.status]?.label);
-    field("Priority",PRIORITY[task.priority]?.label);
-    if(followerNames)field("Followers",followerNames);
-    if(task.asanaLink)field("Asana Link",task.asanaLink);
-    if(task.remarks){
-      y+=4; doc.setDrawColor(220,220,220); doc.line(14,y,196,y); y+=8;
-      doc.setFontSize(10); doc.setFont("helvetica","bold"); doc.setTextColor(120,120,120);
-      doc.text("REMARKS / NOTES",14,y); y+=7;
-      doc.setFont("helvetica","normal"); doc.setTextColor(30,30,30); doc.setFontSize(11);
-      const rem=doc.splitTextToSize(task.remarks,176);
-      doc.text(rem,14,y); y+=rem.length*6;
-    }
+  const downloadPDF = async () => {
+    if(!panelRef.current)return;
+    const canvas=await html2canvas(panelRef.current,{backgroundColor:C.surface,scale:2,useCORS:true,logging:false});
+    const imgData=canvas.toDataURL("image/png");
+    const doc=new jsPDF({orientation:"portrait",unit:"px",format:[canvas.width/2,canvas.height/2]});
+    doc.addImage(imgData,"PNG",0,0,canvas.width/2,canvas.height/2);
     doc.save(`${task.title.replace(/\s+/g,"-").toLowerCase()}.pdf`);
   };
 
@@ -216,7 +221,7 @@ function TaskDrawer({task,members,projects,currentUser,onClose,onUpdate,isMobile
 
   return <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",justifyContent:"flex-end"}} onClick={onClose}>
     <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.5)",backdropFilter:"blur(4px)"}}/>
-    <div style={{position:"relative",width:isMobile?"100%":490,background:C.surface,borderLeft:`1px solid ${C.border}`,height:"100%",display:"flex",flexDirection:"column",animation:"slideRight .25s ease",overflowY:"hidden"}} onClick={e=>e.stopPropagation()}>
+    <div ref={panelRef} style={{position:"relative",width:isMobile?"100%":490,background:C.surface,borderLeft:`1px solid ${C.border}`,height:"100%",display:"flex",flexDirection:"column",animation:"slideRight .25s ease",overflowY:"hidden"}} onClick={e=>e.stopPropagation()}>
 
       {/* Header */}
       <div style={{padding:"18px 20px 14px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
@@ -677,6 +682,13 @@ export default function App(){
   const [tf,setTF]           = useState({status:"all",priority:"all",assignee:"all"});
   const [mobile,setMobile]   = useState(window.innerWidth<768);
   const [toast,setToast]     = useState(null);
+  const [sharedTask,setSharedTask] = useState(()=>{
+    try{
+      const h=window.location.hash;
+      if(h.startsWith("#task=")){const d=JSON.parse(decodeURIComponent(escape(atob(h.slice(6)))));return d;}
+    }catch{}
+    return null;
+  });
 
   useEffect(()=>{const r=()=>setMobile(window.innerWidth<768);window.addEventListener("resize",r);return()=>window.removeEventListener("resize",r);},[]);
   useEffect(()=>{saveData(data);},[data]);
@@ -950,6 +962,9 @@ export default function App(){
 
     {/* TASK DRAWER */}
     {openTask&&<TaskDrawer task={openTask} members={members} projects={visProjs} currentUser={user} onClose={()=>setOpen(null)} onUpdate={updateTask} isMobile={mobile}/>}
+
+    {/* SHARED TASK VIEW */}
+    {sharedTask&&<SharedTaskView data={sharedTask} onClose={()=>{setSharedTask(null);history.replaceState(null,"",window.location.pathname);}}/>}
 
     {/* TOAST */}
     {toast&&<div style={{position:"fixed",bottom:mobile?80:24,right:20,zIndex:2000,background:toast.type==="info"?C.card:"#1A2E1A",border:`1px solid ${toast.type==="info"?C.border2:"rgba(34,201,122,.3)"}`,color:toast.type==="info"?C.muted2:"#22C97A",padding:"10px 18px",borderRadius:12,fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(0,0,0,.4)",animation:"toastIn .25s ease",fontFamily:F}}>{toast.msg}</div>}
