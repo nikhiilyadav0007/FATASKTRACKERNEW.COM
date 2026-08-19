@@ -48,6 +48,22 @@ const PROJECT_COLORS = ["#4F8EF7","#22C97A","#A78BFA","#F59E0B","#F04D5A","#38BD
 const C = { bg:"#080B12",surface:"#0E1320",card:"#131929",cardHov:"#172035",border:"#1C2640",border2:"#242E4A",accent:"#4F8EF7",text:"#E2E8F8",muted:"#5A6A8A",muted2:"#8896B0" };
 const F = "'Syne',sans-serif";
 
+// ── FINANCE HELPERS ───────────────────────────────────────────────────────────
+const PAY_MODES = ["NEFT","RTGS","IMPS","UPI","Cheque","Cash","Card","Other"];
+const fmtMoney = n => "₹"+Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+function dataURLtoBlob(dataURL){
+  const [head,body]=dataURL.split(",");
+  const mime=(head.match(/:(.*?);/)||[])[1]||"application/octet-stream";
+  const bin=atob(body); const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+function openPdf(file){
+  if(!file?.data)return;
+  try{ const url=URL.createObjectURL(dataURLtoBlob(file.data)); window.open(url,"_blank"); setTimeout(()=>URL.revokeObjectURL(url),60000); }
+  catch{ window.open(file.data,"_blank"); }
+}
+
 // ── SHARE HELPERS ─────────────────────────────────────────────────────────────
 function makeShareURL(task,members,projects){
   const asgn=members.find(m=>m.id===task.assigneeId);
@@ -432,7 +448,7 @@ function TaskCard({task,members,projects,onOpen,onStatusChange,onDelete,isMobile
 }
 
 // ── PROJECT CARD ──────────────────────────────────────────────────────────────
-function ProjectCard({project,tasks,members,onClick,onEdit,onDelete,isAdmin}){
+function ProjectCard({project,tasks,members,onClick,onEdit,onDelete,onFinance,isAdmin}){
   const [hover,setHover]=useState(false);
   const pt=tasks.filter(t=>t.projectId===project.id);
   const done=pt.filter(t=>t.status==="done").length,overdue=pt.filter(t=>t.due&&t.due<today()&&t.status!=="done").length;
@@ -460,9 +476,10 @@ function ProjectCard({project,tasks,members,onClick,onEdit,onDelete,isAdmin}){
       </div>
       <div style={{display:"flex"}}>{assignees.slice(0,4).map((m,i)=><Avatar key={m.id} member={m} size={24} overlap={assignees.length-i}/>)}</div>
     </div>
-    {hover&&isAdmin&&<div style={{display:"flex",gap:6,marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`}} onClick={e=>e.stopPropagation()}>
-      <Btn small variant="ghost" onClick={()=>onEdit(project)}>✎ Edit</Btn>
-      <Btn small variant="danger" onClick={()=>onDelete(project.id)}>✕ Delete</Btn>
+    {hover&&<div style={{display:"flex",gap:6,marginTop:14,paddingTop:12,borderTop:`1px solid ${C.border}`,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+      {onFinance&&<Btn small variant="ghost" onClick={()=>onFinance(project)}>₹ Finance</Btn>}
+      {isAdmin&&<Btn small variant="ghost" onClick={()=>onEdit(project)}>✎ Edit</Btn>}
+      {isAdmin&&<Btn small variant="danger" onClick={()=>onDelete(project.id)}>✕ Delete</Btn>}
     </div>}
   </div>;
 }
@@ -672,6 +689,320 @@ function GanttView({tasks,projects,members,mobile}){
   </div>;
 }
 
+// ── FINANCE: PDF PICKER + FORMS ───────────────────────────────────────────────
+function PdfPicker({file,onPick,onClear}){
+  const ref=useRef();
+  const [err,setErr]=useState("");
+  return <div style={{marginBottom:14}}>
+    <div style={{fontSize:11,fontWeight:700,color:C.muted2,marginBottom:6,letterSpacing:.8}}>PDF DOCUMENT</div>
+    {file?.data
+      ? <div style={{display:"flex",alignItems:"center",gap:8,background:C.surface,border:`1px solid ${C.border2}`,borderRadius:10,padding:"9px 12px"}}>
+          <span style={{fontSize:18,flexShrink:0}}>📄</span>
+          <span style={{flex:1,minWidth:0,fontSize:12,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{file.name}</span>
+          <button type="button" onClick={()=>openPdf(file)} style={{background:"rgba(79,142,247,.12)",border:`1px solid rgba(79,142,247,.3)`,borderRadius:8,color:C.accent,fontSize:11,fontWeight:700,fontFamily:F,padding:"4px 10px",cursor:"pointer"}}>View</button>
+          <button type="button" onClick={onClear} style={{background:"rgba(240,77,90,.1)",border:`1px solid rgba(240,77,90,.2)`,borderRadius:8,color:"#F04D5A",width:26,height:26,cursor:"pointer",fontSize:14}}>×</button>
+        </div>
+      : <div onClick={()=>ref.current.click()} style={{border:`2px dashed ${C.border2}`,borderRadius:10,padding:"16px",textAlign:"center",cursor:"pointer",fontSize:12,color:C.muted2}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border2}>
+          📎 Click to attach PDF · Max 3MB
+        </div>}
+    {err&&<div style={{color:"#F04D5A",fontSize:11,marginTop:6}}>{err}</div>}
+    <input ref={ref} type="file" accept="application/pdf,.pdf" style={{display:"none"}} onChange={e=>{
+      const f=e.target.files?.[0]; if(!f){return;} setErr("");
+      if(f.type&&f.type!=="application/pdf"&&!f.name.toLowerCase().endsWith(".pdf")){setErr("Please select a PDF file");return;}
+      if(f.size>3*1024*1024){setErr("File too large (max 3MB)");return;}
+      const r=new FileReader(); r.onload=()=>onPick({name:f.name,size:f.size,data:r.result}); r.readAsDataURL(f);
+      e.target.value="";
+    }}/>
+  </div>;
+}
+
+function POForm({po,onSave,onClose}){
+  const [f,setF]=useState({number:po?.number||"",party:po?.party||"",amount:po?.amount??"",date:po?.date||today(),note:po?.note||"",pdf:po?.pdf||null});
+  const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  return <>
+    <Inp label="PO Number" value={f.number} onChange={v=>s("number",v)} placeholder="e.g. PO-2026-001" required/>
+    <Inp label="Vendor / Party" value={f.party} onChange={v=>s("party",v)} placeholder="Who is this PO raised on?"/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <Inp label="PO Amount (₹)" value={f.amount} onChange={v=>s("amount",v)} type="number" placeholder="0"/>
+      <Inp label="PO Date" value={f.date} onChange={v=>s("date",v)} type="date"/>
+    </div>
+    <Inp label="Note" value={f.note} onChange={v=>s("note",v)} placeholder="Optional details..." type="textarea"/>
+    <PdfPicker file={f.pdf} onPick={p=>s("pdf",p)} onClear={()=>s("pdf",null)}/>
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+      <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+      <Btn disabled={!f.number.trim()} onClick={()=>onSave({...f,amount:Number(f.amount)||0})}>{po?"Save Changes":"Add PO"}</Btn>
+    </div>
+  </>;
+}
+
+function InvoiceForm({inv,onSave,onClose}){
+  const [f,setF]=useState({number:inv?.number||"",amount:inv?.amount??"",date:inv?.date||today(),note:inv?.note||"",pdf:inv?.pdf||null});
+  const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  return <>
+    <Inp label="Invoice Number" value={f.number} onChange={v=>s("number",v)} placeholder="e.g. INV-2026-014" required/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <Inp label="Invoice Amount (₹)" value={f.amount} onChange={v=>s("amount",v)} type="number" placeholder="0"/>
+      <Inp label="Invoice Date" value={f.date} onChange={v=>s("date",v)} type="date"/>
+    </div>
+    <Inp label="Note" value={f.note} onChange={v=>s("note",v)} placeholder="Optional details..." type="textarea"/>
+    <PdfPicker file={f.pdf} onPick={p=>s("pdf",p)} onClear={()=>s("pdf",null)}/>
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+      <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+      <Btn disabled={!f.number.trim()} onClick={()=>onSave({...f,amount:Number(f.amount)||0})}>{inv?"Save Changes":"Add Invoice"}</Btn>
+    </div>
+  </>;
+}
+
+function PaymentForm({pay,onSave,onClose}){
+  const [f,setF]=useState({amount:pay?.amount??"",date:pay?.date||today(),mode:pay?.mode||"NEFT",reference:pay?.reference||"",note:pay?.note||"",pdf:pay?.pdf||null});
+  const s=(k,v)=>setF(x=>({...x,[k]:v}));
+  return <>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <Inp label="Amount Received (₹)" value={f.amount} onChange={v=>s("amount",v)} type="number" placeholder="0"/>
+      <Inp label="Payment Date" value={f.date} onChange={v=>s("date",v)} type="date"/>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <Inp label="Mode" value={f.mode} onChange={v=>s("mode",v)} options={PAY_MODES.map(m=>({value:m,label:m}))}/>
+      <Inp label="Reference / UTR" value={f.reference} onChange={v=>s("reference",v)} placeholder="Txn ref no."/>
+    </div>
+    <Inp label="Note" value={f.note} onChange={v=>s("note",v)} placeholder="Optional details..." type="textarea"/>
+    <PdfPicker file={f.pdf} onPick={p=>s("pdf",p)} onClear={()=>s("pdf",null)}/>
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+      <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+      <Btn disabled={!(Number(f.amount)>0)} onClick={()=>onSave({...f,amount:Number(f.amount)||0})}>{pay?"Save Changes":"Add Payment"}</Btn>
+    </div>
+  </>;
+}
+
+// ── FINANCE ROLLUP HELPERS ────────────────────────────────────────────────────
+const num=v=>Number(v)||0;
+const invPaid=inv=>(inv.payments||[]).reduce((s,p)=>s+num(p.amount),0);
+const poInvoiced=po=>(po.invoices||[]).reduce((s,i)=>s+num(i.amount),0);
+const poReceived=po=>(po.invoices||[]).reduce((s,i)=>s+invPaid(i),0);
+function projectFinance(project){
+  const pos=project?.finance?.pos||[];
+  const poValue=pos.reduce((s,p)=>s+num(p.amount),0);
+  const invoiced=pos.reduce((s,p)=>s+poInvoiced(p),0);
+  const received=pos.reduce((s,p)=>s+poReceived(p),0);
+  return {pos,poValue,invoiced,received,outstanding:invoiced-received,toInvoice:poValue-invoiced};
+}
+const invStatus=inv=>{const paid=invPaid(inv),amt=num(inv.amount);
+  if(amt>0&&paid>=amt)return{label:"Paid",color:"#22C97A",bg:"rgba(34,201,122,.13)"};
+  if(paid>0)return{label:"Partial",color:"#F59E0B",bg:"rgba(245,158,11,.13)"};
+  return{label:"Unpaid",color:"#6B7A99",bg:"rgba(107,122,153,.13)"};};
+
+// ── FINANCE VIEW ──────────────────────────────────────────────────────────────
+function StatCard({label,value,color,sub,mobile}){
+  return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:mobile?"13px 14px":"16px 18px"}}>
+    <div style={{fontSize:10,color:C.muted2,letterSpacing:.8,marginBottom:8}}>{label}</div>
+    <div style={{fontSize:mobile?17:21,fontWeight:800,color:color||C.text,lineHeight:1,wordBreak:"break-word"}}>{value}</div>
+    {sub&&<div style={{fontSize:10,color:C.muted,marginTop:6}}>{sub}</div>}
+  </div>;
+}
+
+function PdfChip({file,label}){
+  if(!file?.data)return null;
+  return <button type="button" onClick={()=>openPdf(file)} title={file.name} style={{display:"inline-flex",alignItems:"center",gap:4,background:"rgba(240,77,90,.1)",border:`1px solid rgba(240,77,90,.28)`,borderRadius:8,color:"#F04D5A",fontSize:10,fontWeight:700,fontFamily:F,padding:"3px 8px",cursor:"pointer"}}>📄 {label||"PDF"}</button>;
+}
+
+function FinanceView({projects,initialProjectId,getProject,onSetPos,isAdmin,mobile,toast$}){
+  const [sel,setSel]=useState(initialProjectId||"all");
+  const [fmodal,setFModal]=useState(null); // {type,poId,invId,payload}
+  const [openPOs,setOpenPOs]=useState({});
+  const [openInvs,setOpenInvs]=useState({});
+  useEffect(()=>{ if(initialProjectId) setSel(initialProjectId); },[initialProjectId]);
+
+  const project=sel==="all"?null:getProject(sel);
+  const pos=project?project.finance?.pos||[]:[];
+  const onChangePos=np=>onSetPos(sel,np);
+
+  // mutations
+  const savePO=(form,eid)=>{onChangePos(eid?pos.map(p=>p.id===eid?{...p,...form}:p):[...pos,{id:uid(),invoices:[],...form}]);toast$(eid?"PO updated":"PO added");};
+  const delPO=id=>{if(!window.confirm("Delete this PO and all its invoices/payments?"))return;onChangePos(pos.filter(p=>p.id!==id));toast$("PO deleted","info");};
+  const saveInv=(poId,form,eid)=>{onChangePos(pos.map(p=>p.id!==poId?p:{...p,invoices:eid?(p.invoices||[]).map(i=>i.id===eid?{...i,...form}:i):[...(p.invoices||[]),{id:uid(),payments:[],...form}]}));toast$(eid?"Invoice updated":"Invoice added");};
+  const delInv=(poId,invId)=>{if(!window.confirm("Delete this invoice and its payments?"))return;onChangePos(pos.map(p=>p.id!==poId?p:{...p,invoices:(p.invoices||[]).filter(i=>i.id!==invId)}));toast$("Invoice deleted","info");};
+  const savePay=(poId,invId,form,eid)=>{onChangePos(pos.map(p=>p.id!==poId?p:{...p,invoices:(p.invoices||[]).map(i=>i.id!==invId?i:{...i,payments:eid?(i.payments||[]).map(x=>x.id===eid?{...x,...form}:x):[...(i.payments||[]),{id:uid(),...form}]})}));toast$(eid?"Payment updated":"Payment added");};
+  const delPay=(poId,invId,payId)=>{onChangePos(pos.map(p=>p.id!==poId?p:{...p,invoices:(p.invoices||[]).map(i=>i.id!==invId?i:{...i,payments:(i.payments||[]).filter(x=>x.id!==payId)})}));toast$("Payment deleted","info");};
+
+  const selector=<select value={sel} onChange={e=>setSel(e.target.value)} style={{background:C.card,border:`1px solid ${C.border2}`,borderRadius:8,color:C.text,padding:"8px 12px",fontSize:12,fontFamily:F,cursor:"pointer",maxWidth:"100%"}}>
+    <option value="all">All Projects — Overview</option>
+    {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+  </select>;
+
+  // ── OVERVIEW (ALL PROJECTS) ──
+  if(sel==="all"){
+    const rows=projects.map(p=>({p,...projectFinance(p)}));
+    const tot=rows.reduce((a,r)=>({poValue:a.poValue+r.poValue,invoiced:a.invoiced+r.invoiced,received:a.received+r.received,outstanding:a.outstanding+r.outstanding}),{poValue:0,invoiced:0,received:0,outstanding:0});
+    return <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div><h1 style={{fontSize:mobile?20:24,fontWeight:800,marginBottom:4}}>Finance Overview</h1><p style={{color:C.muted2,fontSize:13}}>All projects · combined summary</p></div>
+        {selector}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:mobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:24}}>
+        <StatCard label="TOTAL PO VALUE" value={fmtMoney(tot.poValue)} color={C.accent} mobile={mobile}/>
+        <StatCard label="INVOICED" value={fmtMoney(tot.invoiced)} color="#A78BFA" mobile={mobile}/>
+        <StatCard label="COLLECTED" value={fmtMoney(tot.received)} color="#22C97A" mobile={mobile}/>
+        <StatCard label="OUTSTANDING" value={fmtMoney(tot.outstanding)} color={tot.outstanding>0?"#F59E0B":C.muted2} sub="Invoiced not yet received" mobile={mobile}/>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:800}}>Project-wise Breakdown</div>
+        {rows.length===0
+          ?<div style={{padding:"40px 20px",textAlign:"center",color:C.muted2,fontSize:13}}>No projects yet</div>
+          :<div style={{overflowX:"auto"}}>
+            <div style={{minWidth:640}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.2fr 1.2fr",gap:8,padding:"10px 18px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+                {["PROJECT","PO VALUE","INVOICED","COLLECTED","OUTSTANDING"].map((h,i)=><span key={h} style={{fontSize:10,fontWeight:700,color:C.muted2,letterSpacing:.6,textAlign:i===0?"left":"right"}}>{h}</span>)}
+              </div>
+              {rows.map(r=>(
+                <div key={r.p.id} onClick={()=>setSel(r.p.id)} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.2fr 1.2fr",gap:8,padding:"12px 18px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",alignItems:"center"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=C.cardHov} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}><span style={{width:8,height:8,borderRadius:"50%",background:r.p.color,flexShrink:0}}/><span style={{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.p.name}</span></span>
+                  <span style={{fontSize:12,color:C.text,textAlign:"right"}}>{fmtMoney(r.poValue)}</span>
+                  <span style={{fontSize:12,color:"#A78BFA",textAlign:"right"}}>{fmtMoney(r.invoiced)}</span>
+                  <span style={{fontSize:12,color:"#22C97A",textAlign:"right"}}>{fmtMoney(r.received)}</span>
+                  <span style={{fontSize:12,color:r.outstanding>0?"#F59E0B":C.muted,textAlign:"right",fontWeight:700}}>{fmtMoney(r.outstanding)}</span>
+                </div>
+              ))}
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.2fr 1.2fr",gap:8,padding:"13px 18px",background:C.surface,alignItems:"center"}}>
+                <span style={{fontSize:12,fontWeight:800,color:C.text}}>TOTAL</span>
+                <span style={{fontSize:12,fontWeight:800,color:C.text,textAlign:"right"}}>{fmtMoney(tot.poValue)}</span>
+                <span style={{fontSize:12,fontWeight:800,color:"#A78BFA",textAlign:"right"}}>{fmtMoney(tot.invoiced)}</span>
+                <span style={{fontSize:12,fontWeight:800,color:"#22C97A",textAlign:"right"}}>{fmtMoney(tot.received)}</span>
+                <span style={{fontSize:12,fontWeight:800,color:tot.outstanding>0?"#F59E0B":C.muted2,textAlign:"right"}}>{fmtMoney(tot.outstanding)}</span>
+              </div>
+            </div>
+          </div>}
+      </div>
+      <div style={{marginTop:12,fontSize:11,color:C.muted,textAlign:"center"}}>Tap a project row to open its detailed finances</div>
+    </div>;
+  }
+
+  // ── SINGLE PROJECT DETAIL ──
+  const sum=projectFinance(project);
+  const iconBtn=(bg,bd,cl,label,onClick)=><button type="button" onClick={onClick} style={{background:bg,border:`1px solid ${bd}`,borderRadius:8,color:cl,fontSize:11,fontWeight:700,fontFamily:F,padding:"4px 10px",cursor:"pointer",whiteSpace:"nowrap"}}>{label}</button>;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:mobile?"flex-start":"center",marginBottom:20,flexWrap:"wrap",gap:12,flexDirection:mobile?"column":"row"}}>
+      <div>
+        <h1 style={{fontSize:mobile?20:24,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><span style={{width:10,height:10,borderRadius:"50%",background:project.color,display:"inline-block"}}/>{project.name} · Finance</h1>
+        <p style={{color:C.muted2,fontSize:13,marginTop:4}}>{pos.length} PO{pos.length!==1?"s":""} tracked</p>
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        {selector}
+        {isAdmin&&<Btn onClick={()=>setFModal({type:"po"})}>+ Add PO</Btn>}
+      </div>
+    </div>
+
+    {/* summary */}
+    <div style={{display:"grid",gridTemplateColumns:mobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:24}}>
+      <StatCard label="PO VALUE" value={fmtMoney(sum.poValue)} color={C.accent} sub={sum.toInvoice>0?`${fmtMoney(sum.toInvoice)} left to invoice`:"Fully invoiced"} mobile={mobile}/>
+      <StatCard label="INVOICED" value={fmtMoney(sum.invoiced)} color="#A78BFA" mobile={mobile}/>
+      <StatCard label="COLLECTED" value={fmtMoney(sum.received)} color="#22C97A" mobile={mobile}/>
+      <StatCard label="OUTSTANDING" value={fmtMoney(sum.outstanding)} color={sum.outstanding>0?"#F59E0B":C.muted2} sub="Invoiced not yet received" mobile={mobile}/>
+    </div>
+
+    {pos.length===0
+      ?<div style={{textAlign:"center",padding:"50px 20px",background:C.card,borderRadius:16,border:`1px dashed ${C.border2}`}}>
+        <div style={{fontSize:36,marginBottom:10}}>₹</div>
+        <div style={{color:C.text,fontSize:15,fontWeight:700,marginBottom:6}}>No purchase orders yet</div>
+        <div style={{color:C.muted2,fontSize:13,marginBottom:18}}>{isAdmin?"Add a PO to start tracking invoices & payments":"No financial records for this project yet"}</div>
+        {isAdmin&&<Btn onClick={()=>setFModal({type:"po"})}>+ Add First PO</Btn>}
+      </div>
+      :<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {pos.map(po=>{
+          const inv=poInvoiced(po),rec=poReceived(po),poOpen=openPOs[po.id];
+          return <div key={po.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+            {/* PO header */}
+            <div style={{padding:mobile?"14px":"16px 18px",borderLeft:`3px solid ${C.accent}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                    <span style={{fontSize:14,fontWeight:800,color:C.text}}>{po.number}</span>
+                    {po.party&&<span style={{fontSize:11,color:C.muted2}}>· {po.party}</span>}
+                    <PdfChip file={po.pdf} label="PO PDF"/>
+                  </div>
+                  <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                    <span style={{fontSize:12}}><span style={{color:C.muted}}>PO </span><b style={{color:C.text}}>{fmtMoney(po.amount)}</b></span>
+                    <span style={{fontSize:12}}><span style={{color:C.muted}}>Invoiced </span><b style={{color:"#A78BFA"}}>{fmtMoney(inv)}</b></span>
+                    <span style={{fontSize:12}}><span style={{color:C.muted}}>Received </span><b style={{color:"#22C97A"}}>{fmtMoney(rec)}</b></span>
+                    <span style={{fontSize:12}}><span style={{color:C.muted}}>Outstanding </span><b style={{color:(inv-rec)>0?"#F59E0B":C.muted2}}>{fmtMoney(inv-rec)}</b></span>
+                    {po.date&&<span style={{fontSize:11,color:C.muted}}>📅 {po.date}</span>}
+                  </div>
+                  {po.note&&<div style={{fontSize:12,color:C.muted2,marginTop:8,lineHeight:1.5}}>{po.note}</div>}
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                  {isAdmin&&iconBtn("rgba(34,201,122,.1)","rgba(34,201,122,.25)","#22C97A","+ Invoice",()=>setFModal({type:"inv",poId:po.id}))}
+                  {isAdmin&&iconBtn("transparent",C.border2,C.muted2,"✎",()=>setFModal({type:"po",payload:po}))}
+                  {isAdmin&&iconBtn("rgba(240,77,90,.1)","rgba(240,77,90,.2)","#F04D5A","✕",()=>delPO(po.id))}
+                  {(po.invoices||[]).length>0&&iconBtn("transparent",C.border2,C.muted2,poOpen?"▲ Hide":`▼ ${po.invoices.length} inv`,()=>setOpenPOs(o=>({...o,[po.id]:!o[po.id]})))}
+                </div>
+              </div>
+            </div>
+
+            {/* invoices */}
+            {poOpen&&(po.invoices||[]).length>0&&<div style={{borderTop:`1px solid ${C.border}`,background:C.surface,padding:mobile?"10px":"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
+              {po.invoices.map(iv=>{
+                const st=invStatus(iv),paid=invPaid(iv),due=num(iv.amount)-paid,ivOpen=openInvs[iv.id];
+                return <div key={iv.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:mobile?"11px 12px":"12px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5}}>
+                        <span style={{fontSize:13,fontWeight:700,color:C.text}}>{iv.number}</span>
+                        <Pill label={st.label} color={st.color} bg={st.bg} small/>
+                        <PdfChip file={iv.pdf} label="Invoice PDF"/>
+                      </div>
+                      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                        <span style={{fontSize:11}}><span style={{color:C.muted}}>Amt </span><b style={{color:C.text}}>{fmtMoney(iv.amount)}</b></span>
+                        <span style={{fontSize:11}}><span style={{color:C.muted}}>Paid </span><b style={{color:"#22C97A"}}>{fmtMoney(paid)}</b></span>
+                        <span style={{fontSize:11}}><span style={{color:C.muted}}>Due </span><b style={{color:due>0?"#F59E0B":C.muted2}}>{fmtMoney(due)}</b></span>
+                        {iv.date&&<span style={{fontSize:11,color:C.muted}}>📅 {iv.date}</span>}
+                      </div>
+                      {iv.note&&<div style={{fontSize:11,color:C.muted2,marginTop:6}}>{iv.note}</div>}
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {isAdmin&&iconBtn("rgba(34,201,122,.1)","rgba(34,201,122,.25)","#22C97A","+ Payment",()=>setFModal({type:"pay",poId:po.id,invId:iv.id}))}
+                      {isAdmin&&iconBtn("transparent",C.border2,C.muted2,"✎",()=>setFModal({type:"inv",poId:po.id,payload:iv}))}
+                      {isAdmin&&iconBtn("rgba(240,77,90,.1)","rgba(240,77,90,.2)","#F04D5A","✕",()=>delInv(po.id,iv.id))}
+                      {(iv.payments||[]).length>0&&iconBtn("transparent",C.border2,C.muted2,ivOpen?"▲":`▼ ${iv.payments.length}`,()=>setOpenInvs(o=>({...o,[iv.id]:!o[iv.id]})))}
+                    </div>
+                  </div>
+
+                  {/* payments */}
+                  {ivOpen&&(iv.payments||[]).length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,display:"flex",flexDirection:"column",gap:6}}>
+                    {iv.payments.map(pay=>(
+                      <div key={pay.id} style={{display:"flex",alignItems:"center",gap:10,background:C.surface,borderRadius:8,padding:"8px 10px"}}>
+                        <span style={{fontSize:16}}>💵</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <b style={{fontSize:13,color:"#22C97A"}}>{fmtMoney(pay.amount)}</b>
+                            <span style={{fontSize:10,color:C.muted2,background:C.border,borderRadius:6,padding:"1px 6px"}}>{pay.mode||"—"}</span>
+                            {pay.date&&<span style={{fontSize:10,color:C.muted}}>{pay.date}</span>}
+                            <PdfChip file={pay.pdf} label="Receipt"/>
+                          </div>
+                          {(pay.reference||pay.note)&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{[pay.reference&&`Ref: ${pay.reference}`,pay.note].filter(Boolean).join(" · ")}</div>}
+                        </div>
+                        {isAdmin&&<div style={{display:"flex",gap:4,flexShrink:0}}>
+                          {iconBtn("transparent",C.border2,C.muted2,"✎",()=>setFModal({type:"pay",poId:po.id,invId:iv.id,payload:pay}))}
+                          {iconBtn("rgba(240,77,90,.1)","rgba(240,77,90,.2)","#F04D5A","✕",()=>delPay(po.id,iv.id,pay.id))}
+                        </div>}
+                      </div>
+                    ))}
+                  </div>}
+                </div>;
+              })}
+            </div>}
+          </div>;
+        })}
+      </div>}
+
+    {/* finance modals */}
+    {fmodal?.type==="po"&&<Modal title={fmodal.payload?"Edit PO":"Add Purchase Order"} onClose={()=>setFModal(null)}><POForm po={fmodal.payload} onClose={()=>setFModal(null)} onSave={f=>{savePO(f,fmodal.payload?.id);setFModal(null);}}/></Modal>}
+    {fmodal?.type==="inv"&&<Modal title={fmodal.payload?"Edit Invoice":"Add Invoice"} onClose={()=>setFModal(null)}><InvoiceForm inv={fmodal.payload} onClose={()=>setFModal(null)} onSave={f=>{saveInv(fmodal.poId,f,fmodal.payload?.id);setFModal(null);}}/></Modal>}
+    {fmodal?.type==="pay"&&<Modal title={fmodal.payload?"Edit Payment":"Add Payment Received"} onClose={()=>setFModal(null)}><PaymentForm pay={fmodal.payload} onClose={()=>setFModal(null)} onSave={f=>{savePay(fmodal.poId,fmodal.invId,f,fmodal.payload?.id);setFModal(null);}}/></Modal>}
+  </div>;
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [data,setData]       = useState(loadData);
@@ -685,6 +1016,7 @@ export default function App(){
   const [toast,setToast]     = useState(null);
   const [sheetsModal,setSheetsModal]   = useState(false);
   const [sheetsInput,setSheetsInput]   = useState(()=>localStorage.getItem(SHEETS_KEY)||"");
+  const [financeProj,setFinanceProj]   = useState(null);
   const [sharedTask,setSharedTask] = useState(()=>{
     try{
       const h=window.location.hash;
@@ -776,9 +1108,12 @@ export default function App(){
     setData(d=>({...d,members:d.members.filter(m=>m.id!==id)}));
     toast$("Member removed","info");
   };
-  const nav=v=>{setView(v);setSelProj(null);};
+  const nav=v=>{setView(v);setSelProj(null);if(v==="finance")setFinanceProj(null);};
 
-  const navItems=[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"projects",icon:"◈",label:"Projects"},{id:"tasks",icon:"✓",label:"Tasks"},{id:"kanban",icon:"⋮",label:"Kanban"},{id:"gantt",icon:"━",label:"Gantt"},{id:"team",icon:"◎",label:"Team"}];
+  const setProjectPos=(projectId,pos)=>setData(d=>({...d,projects:d.projects.map(p=>p.id===projectId?{...p,finance:{...(p.finance||{}),pos}}:p)}));
+  const openFinance=p=>{setFinanceProj(p.id);setSelProj(null);setView("finance");};
+
+  const navItems=[{id:"dashboard",icon:"⬡",label:"Dashboard"},{id:"projects",icon:"◈",label:"Projects"},{id:"tasks",icon:"✓",label:"Tasks"},{id:"kanban",icon:"⋮",label:"Kanban"},{id:"gantt",icon:"━",label:"Gantt"},{id:"finance",icon:"₹",label:"Finance"},{id:"team",icon:"◎",label:"Team"}];
 
   if(!user)return <LoginScreen members={members} onLogin={setUser}/>;
 
@@ -866,7 +1201,7 @@ export default function App(){
               {isAdmin&&<div style={{marginTop:14}}><Btn onClick={()=>setModal({type:"new-project"})}>+ Create Project</Btn></div>}
             </div>
             :<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
-              {visProjs.map(p=><ProjectCard key={p.id} project={p} tasks={tasks} members={members} onClick={p=>{setSelProj(p);setView("tasks");}} onEdit={p=>setModal({type:"edit-project",payload:p})} onDelete={delProj} isAdmin={isAdmin}/>)}
+              {visProjs.map(p=><ProjectCard key={p.id} project={p} tasks={tasks} members={members} onClick={p=>{setSelProj(p);setView("tasks");}} onEdit={p=>setModal({type:"edit-project",payload:p})} onDelete={delProj} onFinance={openFinance} isAdmin={isAdmin}/>)}
             </div>
           }
         </div>
@@ -896,7 +1231,7 @@ export default function App(){
             {isAdmin&&<Btn onClick={()=>setModal({type:"new-project"})}>+ Create Project</Btn>}
           </div>
           :<div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
-            {visProjs.map(p=><ProjectCard key={p.id} project={p} tasks={tasks} members={members} onClick={p=>{setSelProj(p);setView("tasks");}} onEdit={p=>setModal({type:"edit-project",payload:p})} onDelete={delProj} isAdmin={isAdmin}/>)}
+            {visProjs.map(p=><ProjectCard key={p.id} project={p} tasks={tasks} members={members} onClick={p=>{setSelProj(p);setView("tasks");}} onEdit={p=>setModal({type:"edit-project",payload:p})} onDelete={delProj} onFinance={openFinance} isAdmin={isAdmin}/>)}
           </div>
         }
       </div>}
@@ -911,7 +1246,10 @@ export default function App(){
             </div>:<h1 style={{fontSize:mobile?20:24,fontWeight:800}}>All Tasks</h1>}
             <p style={{color:C.muted2,fontSize:13,marginTop:4}}>{filtered.length} task{filtered.length!==1?"s":""}</p>
           </div>
-          {isAdmin&&<Btn onClick={()=>setModal({type:"new-task",payload:selProj?{projectId:selProj.id}:null})}>+ New Task</Btn>}
+          <div style={{display:"flex",gap:10}}>
+            {selProj&&<Btn variant="ghost" onClick={()=>openFinance(selProj)}>₹ Finance</Btn>}
+            {isAdmin&&<Btn onClick={()=>setModal({type:"new-task",payload:selProj?{projectId:selProj.id}:null})}>+ New Task</Btn>}
+          </div>
         </div>
         <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
           {[{key:"status",opts:[["all","All Status"],...Object.entries(STATUS).map(([k,v])=>[k,v.label])]},{key:"priority",opts:[["all","All Priority"],...Object.entries(PRIORITY).map(([k,v])=>[k,v.label])]},{key:"assignee",opts:[["all","All Members"],...members.map(m=>[m.id,m.name])]}].map(fi=>(
@@ -948,6 +1286,9 @@ export default function App(){
 
       {/* GANTT */}
       {view==="gantt"&&<GanttView tasks={visTasks} projects={visProjs} members={members} mobile={mobile}/>}
+
+      {/* FINANCE */}
+      {view==="finance"&&<FinanceView projects={visProjs} initialProjectId={financeProj} getProject={id=>projects.find(p=>p.id===id)} onSetPos={setProjectPos} isAdmin={isAdmin} mobile={mobile} toast$={toast$}/>}
 
       {/* TEAM */}
       {view==="team"&&<div>
